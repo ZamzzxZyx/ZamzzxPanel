@@ -1,0 +1,68 @@
+name: Build APK
+run-name: build ${{ inputs.build_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: ID build dari panel
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cek ID build
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          [[ "$BUILD_ID" =~ ^[a-z0-9]{6,32}$ ]] || { echo "ID build tidak valid"; exit 1; }
+          test -f "builds/${BUILD_ID}.zip" || { echo "File builds/${BUILD_ID}.zip tidak ditemukan"; exit 1; }
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Siapkan keystore
+        run: |
+          if [ ! -f signing/panel.jks ]; then
+            mkdir -p signing
+            keytool -genkeypair -keystore signing/panel.jks -storepass panel-build -keypass panel-build \
+              -alias panel -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=Panel, O=Panel, C=US"
+            git config user.name "panel-builder"
+            git config user.email "builder@users.noreply.github.com"
+            git add signing/panel.jks
+            git commit -m "Tambah keystore"
+            git push
+          fi
+
+      - name: Buat proyek dari konfigurasi
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+        run: python3 tools/generate.py "builds/${BUILD_ID}.zip"
+
+      - name: Build APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Kumpulkan APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/app.apk
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ inputs.build_id }}
+          path: out/app.apk
+          retention-days: 14
