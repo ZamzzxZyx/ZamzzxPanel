@@ -1,0 +1,9 @@
+build/
+.gradle/
+app/build/
+app/src/main/assets/
+app/src/main/res/
+app/src/main/AndroidManifest.xml
+app/src/main/java/com/panel/webview/AppConfig.java
+app/build.gradle
+out/
